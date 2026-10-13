@@ -1,0 +1,700 @@
+<title>Shanghai Plot Atlas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Instrument+Sans:wght@400;500;600&family=JetBrains+Mono:wght@400;500&family=Noto+Sans+SC:wght@400;500;700&display=swap">
+<style>
+/* Layout: one-screen GIS workbench. Layers rail | live 3D map | plot inspector. Stacks to map-first on phones. */
+:root {
+  --bg: #e9edf0;
+  --panel: #f8fafb;
+  --panel-2: #eef2f4;
+  --line: #d3dade;
+  --fg: #16202a;
+  --muted: #5b6873;
+  --accent: #0f6e8c;
+  --accent-ink: #ffffff;
+  --accent-soft: #d6ecf3;
+  --warn: #a8570c;
+  --warn-soft: #fbe9d6;
+  --stop: #b3261e;
+  --stop-soft: #f8dcda;
+  --ok: #2c7a3f;
+  --ok-soft: #dcefe0;
+  --map-bg: #e3e8ec;
+  --map-district: #d4dbe0;
+  --map-xuhui: #f3f5f6;
+  --map-road: #ffffff;
+  --map-water: #a7c8dc;
+  --map-bldg: #c9cfd6;
+  --map-label: #24313c;
+  --map-halo: #f3f5f6;
+  --font-ui: "Instrument Sans", "Noto Sans SC", "PingFang SC", "Microsoft YaHei", system-ui, sans-serif;
+  --font-zh: "Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --r: 6px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0e1318; --panel: #151c23; --panel-2: #1b242d; --line: #2a3640; --fg: #e3e9ee; --muted: #93a2ae;
+    --accent: #4fb3d4; --accent-ink: #06222c; --accent-soft: #143440; --warn: #f0a85a; --warn-soft: #3a2a17;
+    --stop: #f08a83; --stop-soft: #3d1d1b; --ok: #79c98c; --ok-soft: #173322;
+    --map-bg: #0f151b; --map-district: #1a232c; --map-xuhui: #18212a; --map-road: #2c3945; --map-water: #1c3a50;
+    --map-bldg: #3b4855; --map-label: #dfe7ee; --map-halo: #0f151b;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0e1318; --panel: #151c23; --panel-2: #1b242d; --line: #2a3640; --fg: #e3e9ee; --muted: #93a2ae;
+  --accent: #4fb3d4; --accent-ink: #06222c; --accent-soft: #143440; --warn: #f0a85a; --warn-soft: #3a2a17;
+  --stop: #f08a83; --stop-soft: #3d1d1b; --ok: #79c98c; --ok-soft: #173322;
+  --map-bg: #0f151b; --map-district: #1a232c; --map-xuhui: #18212a; --map-road: #2c3945; --map-water: #1c3a50;
+  --map-bldg: #3b4855; --map-label: #dfe7ee; --map-halo: #0f151b;
+  color-scheme: dark;
+}
+html, body { height: 100%; }
+body { background: var(--bg); color: var(--fg); font-family: var(--font-ui); font-size: 14px; line-height: 1.45; }
+.zh { font-family: var(--font-zh); }
+.mono, .num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+button, input, textarea { font: inherit; color: inherit; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+.app { height: 100%; display: grid; grid-template-rows: auto 1fr; }
+.bar {
+  display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+  padding: 10px 16px; background: var(--panel); border-bottom: 1px solid var(--line);
+}
+.brand { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: .01em; }
+.brand svg { flex: none; }
+.brand small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
+.crumbs { display: flex; align-items: center; gap: 6px; color: var(--muted); font-size: 13px; }
+.crumbs button { background: none; border: 0; padding: 2px 4px; border-radius: 4px; cursor: pointer; color: var(--muted); }
+.crumbs button:hover { color: var(--fg); background: var(--panel-2); }
+.crumbs .here { color: var(--fg); font-weight: 600; }
+.search { flex: 1 1 260px; min-width: 0; position: relative; }
+.search input {
+  width: 100%; padding: 8px 12px 8px 34px; border: 1px solid var(--line); border-radius: var(--r);
+  background: var(--bg); box-sizing: border-box;
+}
+.search svg { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); color: var(--muted); }
+.seg { display: inline-flex; border: 1px solid var(--line); border-radius: var(--r); overflow: hidden; }
+.seg button { border: 0; background: var(--panel); padding: 6px 12px; cursor: pointer; color: var(--muted); }
+.seg button + button { border-left: 1px solid var(--line); }
+.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+
+.work { display: grid; grid-template-columns: 264px minmax(0, 1fr) 380px; min-height: 0; }
+.rail, .inspector { background: var(--panel); overflow-y: auto; min-height: 0; }
+.rail { border-right: 1px solid var(--line); }
+.inspector { border-left: 1px solid var(--line); }
+.mapwrap { position: relative; min-height: 0; background: var(--map-bg); }
+#map { position: absolute; inset: 0; }
+
+.tabs { display: flex; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--panel); z-index: 1; }
+.tabs button { flex: 1; border: 0; background: none; padding: 10px; cursor: pointer; color: var(--muted); border-bottom: 2px solid transparent; }
+.tabs button[aria-selected="true"] { color: var(--fg); border-bottom-color: var(--accent); font-weight: 600; }
+.sect { padding: 14px 16px; display: grid; gap: 10px; border-bottom: 1px solid var(--line); }
+.sect h3 { margin: 0; font-size: 11px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); font-weight: 600; }
+.toggle { display: grid; grid-template-columns: auto 14px 1fr auto; align-items: center; gap: 8px; cursor: pointer; font-size: 13px; }
+.toggle input { margin: 0; accent-color: var(--accent); }
+.toggle .sw { width: 14px; height: 14px; border-radius: 3px; }
+.toggle .ct { color: var(--muted); font-size: 12px; }
+.legend { display: grid; grid-template-columns: 1fr; gap: 6px; font-size: 12px; }
+.legend b { margin-left: auto; }
+.legend div { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.legend i { width: 12px; height: 12px; border-radius: 2px; flex: none; }
+.legend b { font-family: var(--font-mono); font-weight: 500; font-size: 11px; color: var(--muted); }
+.note { font-size: 12px; color: var(--muted); margin: 0; }
+.src { display: grid; gap: 4px; padding: 10px 0; border-top: 1px dashed var(--line); font-size: 12.5px; }
+.src:first-of-type { border-top: 0; padding-top: 0; }
+.src a { color: var(--fg); text-decoration: none; }
+.src a:hover { text-decoration: underline; }
+.src .meta { display: flex; gap: 6px; align-items: center; color: var(--muted); font-size: 11.5px; flex-wrap: wrap; }
+.pill { display: inline-flex; align-items: center; gap: 4px; padding: 1px 7px; border-radius: 999px; font-size: 11px; font-weight: 500; white-space: nowrap; }
+.pill.ok { background: var(--ok-soft); color: var(--ok); }
+.pill.warn { background: var(--warn-soft); color: var(--warn); }
+.pill.stop { background: var(--stop-soft); color: var(--stop); }
+.pill.info { background: var(--accent-soft); color: var(--accent); }
+.pill.neutral { background: var(--panel-2); color: var(--muted); }
+
+.proto { margin: 12px 16px 0; padding: 8px 10px; border-radius: var(--r); background: var(--warn-soft); color: var(--warn); font-size: 12px; }
+.ph { padding: 14px 16px 12px; display: grid; gap: 6px; }
+.ph .kicker { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; }
+.ph h2 { margin: 0; font-size: 19px; line-height: 1.25; text-wrap: balance; }
+.ph .sub { color: var(--muted); font-size: 12.5px; }
+.cat { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 4px; border-radius: 4px; background: var(--panel-2); font-size: 12px; }
+.cat i { width: 12px; height: 12px; border-radius: 2px; }
+.cat b { font-family: var(--font-mono); font-weight: 500; }
+.kpis { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; background: var(--line); border-block: 1px solid var(--line); }
+.kpi { background: var(--panel); padding: 10px 12px; display: grid; gap: 2px; min-width: 0; }
+.kpi span { font-size: 11px; color: var(--muted); }
+.kpi strong { font-family: var(--font-mono); font-weight: 500; font-size: 16px; font-variant-numeric: tabular-nums; }
+.kpi em { font-style: normal; font-size: 11px; color: var(--muted); }
+.kpi.tight strong { color: var(--warn); }
+.meter { display: grid; gap: 6px; }
+.meter .row { display: flex; justify-content: space-between; font-size: 12.5px; gap: 8px; }
+.meter .track { height: 8px; border-radius: 4px; background: var(--panel-2); overflow: hidden; }
+.meter .fill { height: 100%; background: var(--accent); border-radius: 4px; }
+.rules { display: grid; gap: 0; }
+.rule { display: grid; grid-template-columns: 4px 1fr; gap: 10px; padding: 10px 0; border-top: 1px solid var(--line); }
+.rule:first-child { border-top: 0; }
+.rule .stripe { border-radius: 2px; }
+.rule .stripe.stop { background: var(--stop); }
+.rule .stripe.warn { background: var(--warn); }
+.rule .stripe.info { background: var(--accent); }
+.rule .stripe.ok { background: var(--ok); }
+.rule h4 { margin: 0 0 2px; font-size: 13px; font-weight: 600; }
+.rule p { margin: 0; font-size: 12.5px; color: var(--muted); }
+.rule .cite { margin-top: 4px; font-size: 11.5px; }
+.rule .cite a { color: var(--accent); text-decoration: none; }
+.rule .cite a:hover { text-decoration: underline; }
+.uses { display: flex; flex-wrap: wrap; gap: 6px; }
+.ask { display: grid; gap: 8px; }
+.ask form { display: flex; gap: 6px; }
+.ask input { flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--line); border-radius: var(--r); background: var(--bg); }
+.ask button.go { border: 0; background: var(--accent); color: var(--accent-ink); padding: 0 14px; border-radius: var(--r); cursor: pointer; font-weight: 600; }
+.chips { display: flex; flex-wrap: wrap; gap: 6px; }
+.chips button { border: 1px solid var(--line); background: var(--panel); padding: 4px 9px; border-radius: 999px; cursor: pointer; font-size: 12px; color: var(--fg); }
+.chips button:hover { border-color: var(--accent); color: var(--accent); }
+.answer { background: var(--panel-2); border-radius: var(--r); padding: 10px 12px; font-size: 13px; display: grid; gap: 6px; }
+.answer .verdict { display: flex; gap: 8px; align-items: center; font-weight: 600; }
+.answer ul { margin: 0; padding-left: 18px; display: grid; gap: 3px; color: var(--muted); font-size: 12.5px; }
+.answer ul b { color: var(--fg); font-weight: 600; }
+.answer .fine { font-size: 11.5px; color: var(--muted); }
+
+.mapctl { position: absolute; right: 12px; top: 12px; display: grid; gap: 8px; justify-items: end; }
+.card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r); box-shadow: 0 4px 16px rgb(0 0 0 / .08); }
+.inset { position: absolute; left: 12px; bottom: 30px; width: 150px; padding: 8px; display: grid; gap: 4px; }
+.inset svg { width: 100%; height: auto; display: block; cursor: pointer; }
+.inset .cap { display: flex; justify-content: space-between; font-size: 11px; color: var(--muted); }
+.legend-float { position: absolute; left: 12px; top: 12px; padding: 8px 10px; font-size: 12px; display: grid; gap: 4px; max-width: 260px; }
+.legend-float .t { font-weight: 600; }
+.attrib { position: absolute; right: 8px; bottom: 6px; font-size: 10.5px; color: var(--muted); background: color-mix(in srgb, var(--panel) 80%, transparent); padding: 1px 6px; border-radius: 3px; }
+.envctl { padding: 4px; display: flex; gap: 4px; }
+.envctl button { border: 0; background: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; color: var(--muted); font-size: 12.5px; }
+.envctl button[aria-pressed="true"] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.deck-tooltip { font-family: var(--font-ui) !important; }
+
+@media (max-width: 1180px) {
+  .work { grid-template-columns: 240px minmax(0, 1fr) 340px; }
+}
+@media (max-width: 980px) {
+  .app { height: auto; }
+  .work { grid-template-columns: minmax(0, 1fr); grid-template-areas: "map" "insp" "rail"; }
+  .mapwrap { grid-area: map; height: 62vh; min-height: 360px; }
+  .inspector { grid-area: insp; border-left: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .rail { grid-area: rail; border-right: 0; border-top: 1px solid var(--line); overflow: visible; }
+  .inset { width: 92px; bottom: 26px; padding: 5px; }
+  .inset .cap { display: none; }
+  .legend-float { display: none; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="app">
+  <header class="bar">
+    <div class="brand">
+      <svg width="26" height="26" viewBox="0 0 26 26" aria-hidden="true"><rect x="1" y="1" width="24" height="24" rx="5" fill="var(--accent)"/><path d="M6 18 L6 11 L11 11 L11 18 Z M13 18 L13 6 L18 6 L18 18 Z M6 20 L20 20" stroke="var(--accent-ink)" stroke-width="1.6" fill="none"/></svg>
+      <div>Plot Atlas<small class="zh">上海地块图鉴 · prototype</small></div>
+    </div>
+    <nav class="crumbs" aria-label="Location">
+      <button type="button" id="crumb-sh" class="zh">上海 Shanghai</button><span aria-hidden="true">/</span>
+      <button type="button" id="crumb-xh" class="here zh">徐汇区 Xuhui</button>
+    </nav>
+    <div class="search">
+      <svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="currentColor" stroke-width="1.6"/><path d="M11 11 L14.5 14.5" stroke="currentColor" stroke-width="1.6"/></svg>
+      <input id="q" list="names" placeholder="Search a place, metro station or plot (e.g. 徐家汇, 西岸凤巢)" autocomplete="off" aria-label="Search">
+      <datalist id="names"></datalist>
+    </div>
+    <div class="seg" role="group" aria-label="View">
+      <button type="button" id="v3d" aria-pressed="true">3D</button>
+      <button type="button" id="v2d" aria-pressed="false">2D</button>
+    </div>
+  </header>
+
+  <div class="work">
+    <aside class="rail" aria-label="Layers and sources">
+      <div class="tabs" role="tablist">
+        <button type="button" role="tab" id="tab-layers" aria-selected="true">Layers</button>
+        <button type="button" role="tab" id="tab-sources" aria-selected="false">Sources</button>
+      </div>
+      <div id="pane-layers">
+        <div class="sect">
+          <h3>Base map</h3>
+          <label class="toggle"><input type="checkbox" id="L-plots" checked><span class="sw" style="background:#f2d46b"></span>Land use plots<span class="ct num" id="ct-plots"></span></label>
+          <label class="toggle"><input type="checkbox" id="L-bldg" checked><span class="sw" style="background:var(--map-bldg)"></span>Buildings<span class="ct num" id="ct-bldg"></span></label>
+          <label class="toggle"><input type="checkbox" id="L-metro" checked><span class="sw" style="background:#e4002b"></span>Metro<span class="ct num" id="ct-st"></span></label>
+        </div>
+        <div class="sect">
+          <h3>Regulation overlays</h3>
+          <div id="zone-toggles" style="display:grid;gap:10px"></div>
+          <p class="note">Outlines are approximate for the mockup. The real product draws them from the official plan drawings.</p>
+        </div>
+        <div class="sect">
+          <h3>Land use categories</h3>
+          <div class="legend" id="legend"></div>
+          <p class="note">Category names follow the Shanghai <span class="zh">控规</span> code style. In this mockup they are mapped from OpenStreetMap land-use tags.</p>
+        </div>
+      </div>
+      <div id="pane-sources" hidden>
+        <div class="sect">
+          <h3>Regulations and standards</h3>
+          <div id="src-regs"></div>
+        </div>
+        <div class="sect">
+          <h3>Map data in this mockup</h3>
+          <div id="src-data"></div>
+        </div>
+        <div class="sect">
+          <h3>Pipelines for the real build</h3>
+          <div id="src-next"></div>
+        </div>
+      </div>
+    </aside>
+
+    <section class="mapwrap" aria-label="Map of Xuhui">
+      <div id="map"></div>
+      <div class="legend-float card" id="hint"><span class="t">Click any plot</span><span style="color:var(--muted)">See what can be built there and which rules apply.</span></div>
+      <div class="mapctl">
+        <div class="card envctl" role="group" aria-label="Plot view">
+          <button type="button" id="e-prop" aria-pressed="true">Buildable envelope</button>
+          <button type="button" id="e-exist" aria-pressed="false">Existing</button>
+        </div>
+      </div>
+      <div class="inset card">
+        <div class="cap"><span class="zh">上海市 16 区</span><span>Xuhui live</span></div>
+        <svg id="inset" role="button" aria-label="Zoom out to all of Shanghai" tabindex="0"></svg>
+      </div>
+      <div class="attrib">© OpenStreetMap contributors (ODbL) · District outlines: DataV GeoAtlas</div>
+    </section>
+
+    <aside class="inspector" aria-label="Plot inspector" id="insp"></aside>
+  </div>
+</div>
+
+<script src="https://unpkg.com/deck.gl@8.9.35/dist.min.js"></script>
+<script src="data.js"></script>
+<script>
+(() => {
+const D = window.XH, O = D.origin;
+const dec = a => { const r = []; for (let i = 0; i < a.length; i += 2) r.push([O[0] + a[i] / 1e5, O[1] + a[i + 1] / 1e5]); return r; };
+const fmt = (n, d = 0) => Number(n).toLocaleString('en-US', { maximumFractionDigits: d, minimumFractionDigits: d });
+const $ = id => document.getElementById(id);
+
+// ---------- data ----------
+const plots = D.plots.map(p => ({ ...p, poly: dec(p.r), inset: p.in.length ? dec(p.in) : null, center: dec(p.pc)[0] }));
+const buildings = D.buildings.map(([h, e, pid, r]) => ({ h, e, pid, poly: dec(r) }));
+const water = D.water.map(dec);
+const roads = D.roads.map(r => ({ k: r.k, n: r.n, path: dec(r.p) }));
+const metro = D.metro.map(m => ({ l: m.l, path: dec(m.p) }));
+const stations = D.stations.map(s => ({ n: s.n, b: s.b, pos: dec(s.p)[0] }));
+const districts = D.districts.map(d => ({ name: d.name, code: d.code, rings: d.rings.map(dec), c: dec(d.c)[0] }));
+const zones = D.zones.map(z => ({ ...z, rings: z.r.map(dec) }));
+const landmarks = D.landmarks.map(l => ({ n: l.n, pos: dec(l.p)[0] }));
+const xuhui = districts.find(d => d.code === 310104);
+
+// ---------- planning model (illustrative values) ----------
+const CAT = {
+  R:  { en: 'Residential', zh: '住宅组团用地', code: 'Rr', color: '#f2d46b', far: 2.5, h: 80, dens: 30, green: 35, floor: 3.0, uses: ['Housing', 'Community services', 'Kindergarten'] },
+  C8: { en: 'Business office', zh: '商务办公用地', code: 'C8', color: '#cf5c86', far: 4.0, h: 100, dens: 50, green: 15, floor: 4.2, uses: ['Offices', 'R&D offices', 'Hotel (conditional)'] },
+  C2: { en: 'Commercial', zh: '商业服务业用地', code: 'C2', color: '#e5675f', far: 3.5, h: 80, dens: 55, green: 15, floor: 4.5, uses: ['Retail', 'Food & beverage', 'Hotel'] },
+  M1: { en: 'Industrial', zh: '工业用地', code: 'M1', color: '#a87c5a', far: 2.0, h: 50, dens: 40, green: 15, floor: 5.0, uses: ['Clean manufacturing', 'Pilot production'] },
+  X:  { en: 'Development land', zh: '待开发用地', code: 'TBD', color: '#b9ada0', far: 3.0, h: 60, dens: 40, green: 25, floor: 4.0, uses: ['Set by next plan revision'] },
+  G:  { en: 'Public green', zh: '公共绿地', code: 'G1', color: '#6db46d', far: 0.05, h: 12, dens: 3, green: 85, floor: 4.0, uses: ['Park facilities only'] },
+  S:  { en: 'Transport', zh: '交通设施用地', code: 'S', color: '#9aa3ab', far: 0, h: 0, dens: 0, green: 0, floor: 4.0, uses: ['Rail and road facilities'] },
+  D:  { en: 'Special use', zh: '特殊用地', code: 'D', color: '#8b7fa8', far: 0, h: 0, dens: 0, green: 0, floor: 4.0, uses: ['Restricted'] },
+  CR: { en: 'Religious', zh: '宗教用地', code: 'CR', color: '#d9a15a', far: 1.0, h: 24, dens: 40, green: 30, floor: 4.0, uses: ['Religious and cultural'] },
+};
+const ZONE_STYLE = {
+  heritage:  { color: '#8e5a9b', name: 'Heritage area' },
+  core:      { color: '#e0703a', name: 'Xujiahui core' },
+  westbund:  { color: '#2b8cbe', name: 'West Bund' },
+  caohejing: { color: '#6b8e23', name: 'Caohejing park' },
+  relic:     { color: '#b8860b', name: 'Longhua Pagoda' },
+};
+const SRC = {
+  kgzz: { t: '上海市控制性详细规划技术准则 (2016 revision)', en: 'Shanghai detailed control plan technical standards', u: 'https://hd.ghzyj.sh.gov.cn/zcfg/ghbz/201701/P020170111543883631659.pdf' },
+  jsgd: { t: '上海市城市规划管理技术规定（土地使用 建筑管理）', en: 'Planning management technical regulations, 2003, amended 2010', u: 'https://www.shanghai.gov.cn/cmsres/86/86b1c89fade347b3b2349e077bfe8a99/0e5e011bfdea700a47c78f3c9c55d3af.pdf' },
+  rzgf: { t: '上海市日照分析技术规范 (2023)', en: 'Shanghai sunlight analysis technical specification', u: 'https://ghzyj.sh.gov.cn/' },
+  fmtl: { t: '上海市历史文化风貌区和优秀历史建筑保护条例 (2019 revision)', en: 'Heritage areas and listed historic buildings regulation', u: 'https://www.shplanning.com.cn/archive/download/id/1342.html' },
+  gxtl: { t: '上海市城市更新条例 (2021)', en: 'Shanghai urban renewal regulation', u: 'https://www.shanghai.gov.cn/cmsres/8d/8df5e015491046f496dae5d29829049c/790a2c7dacb13573183d55b5abfd7b27.pdf' },
+  zdbf: { t: '上海市控制性详细规划制定办法 (沪府令34号, 2015)', en: 'Rules for making detailed control plans', u: 'https://ghzyj.sh.gov.cn/' },
+  wwbh: { t: '文物保护法 · 保护范围与建设控制地带', en: 'Cultural relics law: protection and construction-control zones', u: 'https://ghzyj.sh.gov.cn/' },
+};
+
+function evaluate(p) {
+  const c = CAT[p.c];
+  let far = c.far, h = c.h, dens = c.dens, green = c.green;
+  const rules = [];
+  const z = new Set(p.z);
+  rules.push({ s: 'info', t: `Base zoning: ${c.en} (${c.code})`, d: `Plot coverage up to ${c.dens}%, green space at least ${c.green}%. Allowed uses: ${c.uses.join(', ').toLowerCase()}.`, src: 'kgzz' });
+  if (p.c === 'S' || p.c === 'D') rules.push({ s: 'stop', t: 'Not open for private development', d: 'Transport and special-use land cannot be built on without a plan change.', src: 'zdbf' });
+  if (p.c === 'G') rules.push({ s: 'stop', t: 'Protected public green space', d: 'Only small park buildings are allowed. Turning green space into building land needs a plan revision with public notice.', src: 'kgzz' });
+  if (p.c === 'X') rules.push({ s: 'warn', t: 'Land use not yet fixed', d: 'The plot is under construction or awaiting a plan. Figures shown assume a typical mixed office and commercial plan.', src: 'zdbf' });
+  if (z.has('core') && far > 0.5) { far += 1.0; h = Math.max(h, 150); rules.push({ s: 'ok', t: 'Xujiahui sub-centre: higher intensity', d: 'Inside the high-intensity zone, so the floor-area ratio cap is raised by 1.0 and towers up to 150 m are possible.', src: 'kgzz' }); }
+  if (z.has('westbund') && far > 0.5) { h = Math.max(h, 120); rules.push({ s: 'info', t: 'West Bund riverfront', d: 'Keep the continuous public riverside walk open. Tower heights follow the West Bund urban design guide.', src: 'gxtl' }); }
+  if (z.has('caohejing') && (p.c === 'M1' || p.c === 'X')) { far = Math.max(far, 3.5); rules.push({ s: 'ok', t: 'Caohejing: multi-storey industry allowed', d: 'Industrial plots in the park may stack production floors (工业上楼), so a higher floor-area ratio applies.', src: 'kgzz' }); }
+  if (p.sd < 300 && far > 0.5) { far *= 1.15; rules.push({ s: 'ok', t: `Near metro: ${p.st} station, ${fmt(p.sd)} m`, d: 'Within 300 m of a rail station, so a +15% density bonus applies for transit-oriented development.', src: 'kgzz' }); }
+  else if (p.sd < 600 && far > 0.5) { far *= 1.05; rules.push({ s: 'ok', t: `Metro catchment: ${p.st} station, ${fmt(p.sd)} m`, d: 'Within 600 m of a rail station, so a +5% density bonus applies.', src: 'kgzz' }); }
+  if (z.has('heritage')) { far = Math.min(far, 1.6); h = Math.min(h, 18); rules.push({ s: 'stop', t: 'Hengshan–Fuxing Road heritage area', d: 'New buildings must keep the historic scale, around 18 m in this mockup. Listed buildings cannot be demolished. Facades, materials and street lines need heritage review.', src: 'fmtl' }); }
+  if (z.has('relic') || p.pd < 250) {
+    if (p.pd < 100) { far = 0; h = 0; rules.push({ s: 'stop', t: 'Longhua Pagoda protection zone', d: 'No new construction within the relic protection zone.', src: 'wwbh' }); }
+    else { h = Math.min(h, 18); far = Math.min(far, 1.8); rules.push({ s: 'warn', t: 'Longhua Pagoda construction-control zone', d: `About ${fmt(p.pd)} m from the pagoda. Heights are capped so views of the pagoda stay open.`, src: 'wwbh' }); }
+  }
+  if (p.nr && p.c !== 'R' && h > 24) rules.push({ s: 'warn', t: 'Sunlight check for neighbouring homes', d: 'Homes next to the plot must keep at least 1 hour of full-window sunlight on the winter solstice. This usually trims the tower position and height.', src: 'rzgf' });
+  if (p.c === 'R') rules.push({ s: 'warn', t: 'Sunlight standard for new homes', d: 'New homes and their neighbours must meet the winter-solstice sunlight rule. Building spacing follows the residential spacing tables.', src: 'rzgf' });
+  rules.push({ s: 'info', t: 'Setbacks from plot boundary', d: `Buildings stay inside the dashed envelope, set back from the boundary by the distances in the technical regulations. Setbacks grow with building height.`, src: 'jsgd' });
+  const area = p.a, gfa = area * far;
+  const footprint = area * dens / 100;
+  const floors = footprint > 0 ? gfa / footprint : 0;
+  const needH = floors * c.floor;
+  return { c, far, h, dens, green, gfa, footprint, floors, needH, massH: Math.min(needH, h), limitedByHeight: needH > h + 0.1 && h > 0, rules };
+}
+
+// ---------- theme-aware colours ----------
+const hex = s => { s = s.trim().replace('#', ''); if (s.length === 3) s = s.split('').map(x => x + x).join(''); const n = parseInt(s, 16); return [(n >> 16) & 255, (n >> 8) & 255, n & 255]; };
+let T = {};
+function readTheme() {
+  const cs = getComputedStyle(document.documentElement);
+  const g = k => hex(cs.getPropertyValue(k));
+  T = { bg: g('--map-bg'), district: g('--map-district'), xuhui: g('--map-xuhui'), road: g('--map-road'), water: g('--map-water'), bldg: g('--map-bldg'), label: g('--map-label'), halo: g('--map-halo'), accent: g('--accent'), stop: g('--stop') };
+  T.dark = (T.bg[0] + T.bg[1] + T.bg[2]) < 200;
+}
+const METRO = { '1': '#e4002b', '3': '#ffd100', '4': '#5f259f', '7': '#ff6900', '9': '#71c5e8', '10': '#c1a7e2', '11': '#76232f', '12': '#007b5f', '14': '#827a04', '15': '#bca886' };
+
+// ---------- state ----------
+const state = {
+  sel: null, mode: 'prop', pitch: 55,
+  layers: { plots: true, bldg: true, metro: true },
+  zones: Object.fromEntries(zones.map(z => [z.id, z.id !== 'core'])),
+  answer: null,
+};
+const defaultPlot = plots.find(p => p.c === 'X' && p.z.includes('westbund') && p.a > 30000 && p.a < 90000) || plots.find(p => p.z.includes('westbund')) || plots[0];
+
+// ---------- deck ----------
+let deckgl, viewState;
+const XH_VIEW = { longitude: 121.4405, latitude: 31.1735, zoom: 14.2, pitch: 55, bearing: -28 };
+const SH_VIEW = { longitude: 121.47, latitude: 31.2, zoom: 8.6, pitch: 0, bearing: 0 };
+
+function layers() {
+  const L = [];
+  const sel = state.sel;
+  const flat = { depthTest: false, depthMask: false };
+  L.push(new deck.PolygonLayer({
+    id: 'districts', data: districts.flatMap(d => d.rings.map(r => ({ d, r }))),
+    getPolygon: o => o.r, filled: true, stroked: true, pickable: true,
+    getFillColor: o => o.d.code === 310104 ? [...T.xuhui, 255] : [...T.district, 255],
+    getLineColor: o => o.d.code === 310104 ? [...T.accent, 255] : [...T.label, 60],
+    lineWidthUnits: 'pixels', getLineWidth: o => o.d.code === 310104 ? 2 : 1,
+    parameters: flat, updateTriggers: { getFillColor: T, getLineColor: T },
+  }));
+  L.push(new deck.PolygonLayer({ id: 'water', data: water, getPolygon: r => r, getFillColor: [...T.water, 255], stroked: false, parameters: flat, updateTriggers: { getFillColor: T } }));
+  if (state.layers.plots) L.push(new deck.PolygonLayer({
+    id: 'plots', data: plots, getPolygon: p => p.poly, pickable: true, autoHighlight: true,
+    highlightColor: [...T.accent, 90],
+    getFillColor: p => [...hex(CAT[p.c].color), T.dark ? 120 : 150],
+    stroked: true, getLineColor: [...T.label, 40], lineWidthUnits: 'pixels', getLineWidth: 0.5,
+    parameters: flat, updateTriggers: { getFillColor: T, getLineColor: T },
+  }));
+  L.push(new deck.PathLayer({
+    id: 'roads', data: roads, getPath: r => r.path, getColor: [...T.road, 255],
+    getWidth: r => ({ m: 26, t: 22, p: 16, s: 10 }[r.k] || 8), widthUnits: 'meters', widthMinPixels: 1,
+    capRounded: true, jointRounded: true, parameters: flat, updateTriggers: { getColor: T },
+  }));
+  const zoneData = zones.filter(z => state.zones[z.id]).flatMap(z => z.rings.map(r => ({ z, r })));
+  L.push(new deck.PolygonLayer({
+    id: 'zones', data: zoneData, getPolygon: o => o.r, pickable: true,
+    getFillColor: o => [...hex(ZONE_STYLE[o.z.id].color), 28],
+    getLineColor: o => [...hex(ZONE_STYLE[o.z.id].color), 230], lineWidthUnits: 'pixels', getLineWidth: 2.5,
+    parameters: flat,
+  }));
+  if (state.layers.metro) L.push(new deck.PathLayer({
+    id: 'metro', data: metro, getPath: m => m.path, getColor: m => [...hex(METRO[m.l] || '#888888'), 230],
+    getWidth: 9, widthUnits: 'meters', widthMinPixels: 2, parameters: flat,
+  }));
+  if (sel) L.push(new deck.PathLayer({
+    id: 'sel-outline', data: [sel], getPath: p => [...p.poly, p.poly[0]], getColor: [...T.accent, 255],
+    getWidth: 3, widthUnits: 'pixels', parameters: flat, updateTriggers: { getColor: T },
+  }));
+  if (state.layers.bldg) L.push(new deck.SolidPolygonLayer({
+    id: 'bldg', data: buildings, getPolygon: b => b.poly, extruded: state.pitch > 0, pickable: true,
+    getElevation: b => (sel && state.mode === 'prop' && b.pid === sel.i) ? 0 : b.h,
+    getFillColor: b => {
+      if (sel && b.pid === sel.i) return state.mode === 'prop' ? [0, 0, 0, 0] : [...T.accent, 235];
+      return [...T.bldg, 255];
+    },
+    material: { ambient: 0.55, diffuse: 0.55, shininess: 12, specularColor: [40, 40, 40] },
+    updateTriggers: { getFillColor: [sel && sel.i, state.mode, T], getElevation: [sel && sel.i, state.mode] },
+  }));
+  if (sel && state.mode === 'prop') {
+    const ev = evaluate(sel);
+    const env = sel.inset || sel.poly;
+    if (ev.h > 0 && ev.far > 0) {
+      L.push(new deck.PolygonLayer({
+        id: 'envelope', data: [env], getPolygon: r => r, extruded: true, wireframe: true,
+        getElevation: ev.h, getFillColor: [...T.accent, 34], getLineColor: [...T.accent, 200],
+        material: false, parameters: { depthMask: false },
+        updateTriggers: { getElevation: ev.h, getFillColor: T, getLineColor: T },
+      }));
+      const m = massing(ev, env);
+      L.push(new deck.SolidPolygonLayer({
+        id: 'massing', data: m.parts, getPolygon: o => o.ring, extruded: true, getElevation: o => o.top,
+        getFillColor: o => [...T.accent, o.tower ? 240 : 200], material: { ambient: 0.5, diffuse: 0.6, shininess: 20 },
+        updateTriggers: { getElevation: [sel.i, ev.h], getFillColor: T },
+      }));
+    }
+  }
+  if (state.layers.metro) L.push(new deck.ScatterplotLayer({
+    id: 'stations', data: stations.filter(s => s.b), getPosition: s => s.pos, getRadius: 5, radiusUnits: 'pixels',
+    getFillColor: [...T.halo, 255], stroked: true, getLineColor: [...T.label, 255], lineWidthUnits: 'pixels', getLineWidth: 2,
+    pickable: true, parameters: { depthTest: false }, updateTriggers: { getFillColor: T, getLineColor: T },
+  }));
+  const labels = [
+    ...(state.layers.metro ? stations.filter(s => s.b).map(s => ({ t: s.n, pos: s.pos, size: 12, off: [0, -14] })) : []),
+    ...landmarks.map(l => ({ t: l.n.replace('徐家汇圣依纳爵主教座堂', '徐家汇天主教堂'), pos: l.pos, size: 11, off: [0, 0] })),
+    ...districts.filter(d => d.code !== 310104).map(d => ({ t: d.name, pos: d.c, size: 12, off: [0, 0], far: true })),
+  ];
+  L.push(new deck.TextLayer({
+    id: 'labels', data: labels, getText: d => d.t, getPosition: d => d.pos, getSize: d => d.size,
+    getPixelOffset: d => d.off, getColor: d => [...T.label, d.far ? 150 : 255], fontFamily: '"Noto Sans SC", "PingFang SC", "Microsoft YaHei", sans-serif',
+    characterSet: 'auto', fontSettings: { sdf: true, fontSize: 48, buffer: 6 }, outlineWidth: 3, outlineColor: [...T.halo, 255],
+    getTextAnchor: 'middle', getAlignmentBaseline: 'center', parameters: { depthTest: false },
+    updateTriggers: { getColor: T, outlineColor: T },
+  }));
+  return L;
+}
+
+function ringArea(r) { // m², local equirectangular
+  const kx = Math.cos(31.18 * Math.PI / 180) * 111320, ky = 110540; let a = 0;
+  for (let i = 0; i < r.length; i++) { const [x1, y1] = r[i], [x2, y2] = r[(i + 1) % r.length]; a += (x1 * kx) * (y2 * ky) - (x2 * kx) * (y1 * ky); }
+  return Math.abs(a / 2);
+}
+function scaleRing(r, s) {
+  const cx = r.reduce((a, p) => a + p[0], 0) / r.length, cy = r.reduce((a, p) => a + p[1], 0) / r.length;
+  return r.map(([x, y]) => [cx + (x - cx) * s, cy + (y - cy) * s]);
+}
+
+// Podium plus tower: a 2-floor podium over the allowed coverage, the remaining
+// floor area stacked in a tower no taller than the height limit.
+function massing(ev, env) {
+  const fl = ev.c.floor, envA = Math.max(1, ringArea(env));
+  const podA = Math.min(ev.footprint, envA), podFloors = Math.min(2, Math.max(1, Math.floor(ev.h / fl)));
+  const podH = podFloors * fl, rest = Math.max(0, ev.gfa - podA * podFloors);
+  const towerFloorsMax = Math.max(0, Math.floor((ev.h - podH) / fl));
+  let towA = towerFloorsMax ? Math.max(envA * 0.06, rest / towerFloorsMax) : 0;
+  towA = Math.min(towA, podA);
+  const towFloors = towA ? Math.min(towerFloorsMax, Math.ceil(rest / towA)) : 0;
+  const built = podA * podFloors + towA * towFloors;
+  const parts = [{ ring: scaleRing(env, Math.sqrt(podA / envA)), top: podH, tower: false }];
+  if (towFloors > 0) parts.push({ ring: scaleRing(env, Math.sqrt(towA / envA) * 0.92), top: podH + towFloors * fl, tower: true });
+  return { parts, top: podH + towFloors * fl, floors: podFloors + towFloors, built, podFloors, towFloors };
+}
+
+function tooltip({ object, layer }) {
+  if (!object || !layer) return null;
+  const box = t => ({ html: t, style: { background: getComputedStyle(document.documentElement).getPropertyValue('--panel'), color: getComputedStyle(document.documentElement).getPropertyValue('--fg'), border: '1px solid ' + getComputedStyle(document.documentElement).getPropertyValue('--line'), borderRadius: '6px', fontSize: '12px', padding: '6px 9px', fontFamily: 'var(--font-ui)' } });
+  if (layer.id === 'plots') { const c = CAT[object.c]; return box(`<b>${object.n || 'Unnamed plot'}</b><br>${c.en} <span style="opacity:.7">${c.zh}</span><br>${fmt(object.a)} m²`); }
+  if (layer.id === 'bldg') return box(`Building · ${fmt(object.h)} m${object.e ? ' <span style="opacity:.7">(estimated height)</span>' : ''}`);
+  if (layer.id === 'stations') return box(`<b>${object.n}</b> metro station`);
+  if (layer.id === 'zones') return box(`<b>${object.z.label}</b><br>${object.z.en}`);
+  if (layer.id === 'districts') return box(object.d.code === 310104 ? `<b>${object.d.name}</b> · live in this prototype` : `<b>${object.d.name}</b> · coming next`);
+  return null;
+}
+
+function onClick({ object, layer }) {
+  if (!object || !layer) return;
+  if (layer.id === 'plots') select(object, false);
+  else if (layer.id === 'bldg' && object.pid >= 0) select(plots[object.pid], false);
+  else if (layer.id === 'districts' && object.d.code === 310104) fly(XH_VIEW);
+}
+
+function select(p, doFly = true) {
+  state.sel = p; state.answer = null;
+  render();
+  if (doFly) fly({ longitude: p.center[0], latitude: p.center[1], zoom: Math.max(15.2, 17.6 - Math.log2(Math.sqrt(p.a) / 40)), pitch: state.pitch, bearing: -28 });
+  $('hint').hidden = true;
+}
+
+function fly(v) {
+  viewState = { ...viewState, ...v, transitionDuration: 1400, transitionInterpolator: new deck.FlyToInterpolator() };
+  deckgl.setProps({ initialViewState: viewState });
+  $('crumb-sh').classList.toggle('here', v.zoom < 11); $('crumb-xh').classList.toggle('here', v.zoom >= 11);
+}
+
+// ---------- inspector ----------
+function inspector() {
+  const p = state.sel, el = $('insp');
+  if (!p) { el.innerHTML = '<div class="ph"><h2>Pick a plot</h2><p class="sub">Click any coloured plot or building on the map.</p></div>'; return; }
+  const ev = evaluate(p), c = ev.c;
+  const mz = massing(ev, p.inset || p.poly);
+  const buildable = ev.far > 0 && ev.h > 0;
+  const zoneChips = p.z.map(z => `<span class="pill" style="background:${ZONE_STYLE[z].color}22;color:${ZONE_STYLE[z].color}">${ZONE_STYLE[z].name}</span>`).join('');
+  const existing = buildings.filter(b => b.pid === p.i);
+  const existGfa = existing.reduce((a, b) => a + ringArea(b.poly) * Math.max(1, Math.round(b.h / 3.2)), 0);
+  el.innerHTML = `
+    <div class="proto">Prototype. Plot outlines are real (OpenStreetMap). Planning numbers are illustrative placeholders, not official <span class="zh">控规</span> values.</div>
+    <div class="ph">
+      <div class="kicker"><span class="cat"><i style="background:${c.color}"></i><b>${c.code}</b> ${c.en} · <span class="zh">${c.zh}</span></span>${zoneChips}</div>
+      <h2 class="zh">${p.n || 'Unnamed plot'}</h2>
+      <div class="sub">Demo ID XH-${String(p.i).padStart(4, '0')} · ${fmt(p.a)} m² site · nearest metro <span class="zh">${p.st}</span> ${fmt(p.sd)} m</div>
+    </div>
+    <div class="kpis">
+      <div class="kpi"><span>Floor-area ratio</span><strong>${buildable ? '≤ ' + fmt(ev.far, 2) : '—'}</strong><em class="zh">容积率</em></div>
+      <div class="kpi ${buildable && mz.built < ev.gfa * 0.98 ? 'tight' : ''}"><span>Height limit</span><strong>${buildable ? '≤ ' + fmt(ev.h) + ' m' : '—'}</strong><em class="zh">建筑高度</em></div>
+      <div class="kpi"><span>Max floor area</span><strong>${buildable ? fmt(ev.gfa / 1000, 1) + 'k' : '0'}</strong><em>m² <span class="zh">计容建筑面积</span></em></div>
+      <div class="kpi"><span>Coverage</span><strong>${buildable ? '≤ ' + ev.dens + '%' : '—'}</strong><em class="zh">建筑密度</em></div>
+      <div class="kpi"><span>Green space</span><strong>${'≥ ' + ev.green + '%'}</strong><em class="zh">绿地率</em></div>
+      <div class="kpi"><span>Existing</span><strong>${existing.length ? fmt(existGfa / 1000, 1) + 'k' : '0'}</strong><em>m² est. · ${existing.length} bldg</em></div>
+    </div>
+    <div class="sect">
+      <h3>What fits here</h3>
+      ${buildable ? `
+      <div class="meter">
+        <div class="row"><span>Test design: ${mz.podFloors}-floor podium + ${mz.towFloors}-floor tower</span><span class="num">${fmt(mz.top)} m</span></div>
+        <div class="track"><div class="fill" style="width:${Math.min(100, mz.built / Math.max(ev.gfa, 1) * 100)}%"></div></div>
+        <div class="row" style="color:var(--muted)"><span>Uses ${fmt(mz.built)} of ${fmt(ev.gfa)} m² allowed (${fmt(mz.built / Math.max(ev.gfa, 1) * 100)}%). ${mz.built < ev.gfa * 0.98 ? 'The height limit stops the rest, so a bigger footprint or a height waiver is needed.' : 'The tower fits under the height limit, shown as the glass envelope.'}</span></div>
+      </div>
+      <div class="uses">${c.uses.map(u => `<span class="pill neutral">${u}</span>`).join('')}</div>` : `<p class="note">No new private building is possible here under the current plan.</p>`}
+    </div>
+    <div class="sect ask">
+      <h3>Ask about this plot</h3>
+      <div class="chips">
+        <button type="button" data-q="Can I build 60,000 m² of offices here?">60,000 m² of offices?</button>
+        <button type="button" data-q="Can this become housing?">Can it become housing?</button>
+        <button type="button" data-q="Could I put a 150 m tower here?">A 150 m tower?</button>
+      </div>
+      <form id="ask"><input id="askq" placeholder="e.g. Can I build an AI lab of 20,000 m²?" aria-label="Question about this plot"><button class="go" type="submit">Ask</button></form>
+      <div id="ans"></div>
+    </div>
+    <div class="sect">
+      <h3>Rules that apply · ${ev.rules.length}</h3>
+      <div class="rules">${ev.rules.map(r => `
+        <div class="rule"><span class="stripe ${r.s}"></span><div>
+          <h4>${r.t}</h4><p>${r.d}</p>
+          <div class="cite"><a href="${SRC[r.src].u}" target="_blank" rel="noopener"><span class="zh">${SRC[r.src].t}</span></a></div>
+        </div></div>`).join('')}
+      </div>
+    </div>`;
+  el.querySelectorAll('.chips button').forEach(b => b.addEventListener('click', () => { $('askq').value = b.dataset.q; answer(b.dataset.q); }));
+  $('ask').addEventListener('submit', e => { e.preventDefault(); answer($('askq').value); });
+  if (state.answer) $('ans').innerHTML = state.answer;
+}
+
+function answer(q) {
+  const p = state.sel; if (!p || !q.trim()) return;
+  const ev = evaluate(p); const s = q.toLowerCase();
+  const wantUse =
+    /(office|办公|写字楼)/.test(s) ? 'C8' : /(hous|home|apartment|residen|住宅|公寓)/.test(s) ? 'R' :
+    /(shop|retail|mall|商业|商场)/.test(s) ? 'C2' : /(factory|manufactur|工厂|生产)/.test(s) ? 'M1' :
+    /(lab|r&d|research|研发|实验)/.test(s) ? 'LAB' : null;
+  let area = null; const m = s.replace(/,/g, '').match(/(\d+(?:\.\d+)?)\s*(万)?\s*(m²|m2|sqm|square|平方|㎡)/);
+  if (m) area = parseFloat(m[1]) * (m[2] ? 10000 : 1);
+  let hq = null; const mh = s.match(/(\d+)\s*(m|米)\b(?!²|2)/); if (mh && !m) hq = +mh[1];
+  const fl = s.match(/(\d+)\s*(floor|storey|层)/); if (fl) hq = +fl[1] * ev.c.floor;
+  const pts = []; let v = 'ok';
+  if (ev.far === 0 || ev.h === 0) { v = 'stop'; pts.push('<b>No.</b> The current plan allows no new private building on this plot.'); }
+  if (wantUse) {
+    const allowed = wantUse === p.c || (wantUse === 'LAB' && ['C8', 'M1', 'X'].includes(p.c)) || (p.c === 'X');
+    if (!allowed) { v = 'stop'; pts.push(`<b>Use:</b> ${({ C8: 'offices', R: 'housing', C2: 'retail', M1: 'manufacturing', LAB: 'R&D labs' })[wantUse]} is not an allowed use on ${ev.c.en.toLowerCase()} land. It would need a plan change (控规调整) with a 30-day public notice.`); }
+    else pts.push(`<b>Use:</b> allowed${p.c === 'X' ? ' if the next plan revision designates it, which is likely along the West Bund' : ''}.`);
+  }
+  if (area != null && ev.far > 0) {
+    if (area <= ev.gfa) pts.push(`<b>Floor area:</b> ${fmt(area)} m² fits under the cap of ${fmt(ev.gfa)} m² (${fmt(area / ev.gfa * 100)}% of it).`);
+    else { v = v === 'stop' ? 'stop' : 'warn'; pts.push(`<b>Floor area:</b> ${fmt(area)} m² is over the cap of ${fmt(ev.gfa)} m² by ${fmt(area - ev.gfa)} m².`); }
+  }
+  if (hq != null && ev.h > 0) {
+    if (hq <= ev.h) pts.push(`<b>Height:</b> ${fmt(hq)} m is within the ${fmt(ev.h)} m limit.`);
+    else { v = 'stop'; pts.push(`<b>Height:</b> ${fmt(hq)} m is over the ${fmt(ev.h)} m limit.`); }
+  }
+  if (/how tall|height|高度/.test(s) && hq == null) pts.push(`<b>Height:</b> up to ${fmt(ev.h)} m.`);
+  if (!pts.length) pts.push(`On this plot you can build up to <b>${fmt(ev.gfa)} m²</b> of floor area, at most <b>${fmt(ev.h)} m</b> tall, for ${ev.c.uses.join(', ').toLowerCase()}.`);
+  ev.rules.filter(r => r.s === 'warn' || r.s === 'stop').slice(0, 2).forEach(r => pts.push(`<b>Check:</b> ${r.t}.`));
+  const label = { ok: ['ok', 'Likely yes'], warn: ['warn', 'Possible with changes'], stop: ['stop', 'Not under the current plan'] }[v];
+  state.answer = `<div class="answer"><div class="verdict"><span class="pill ${label[0]}">${label[1]}</span></div><ul>${pts.map(x => `<li>${x}</li>`).join('')}</ul><div class="fine">This prototype uses a small rules engine on placeholder values. The real product will answer from the official plan documents and cite them.</div></div>`;
+  $('ans').innerHTML = state.answer;
+}
+
+// ---------- rail ----------
+function rail() {
+  $('ct-plots').textContent = fmt(plots.length);
+  $('ct-bldg').textContent = fmt(buildings.length);
+  $('ct-st').textContent = D.stats.stations + ' stn';
+  $('zone-toggles').innerHTML = zones.map(z => `<label class="toggle"><input type="checkbox" data-z="${z.id}" ${state.zones[z.id] ? 'checked' : ''}><span class="sw" style="background:${ZONE_STYLE[z.id].color}"></span><span><span class="zh">${z.label}</span><br><span style="color:var(--muted);font-size:12px">${z.en}</span></span><span></span></label>`).join('');
+  $('zone-toggles').querySelectorAll('input').forEach(i => i.addEventListener('change', () => { state.zones[i.dataset.z] = i.checked; draw(); }));
+  $('legend').innerHTML = Object.entries(CAT).map(([k, c]) => `<div><i style="background:${c.color}"></i><span>${c.en}</span> <b>${c.code}</b></div>`).join('');
+  const srcRow = (t, en, u, pill) => `<div class="src"><a href="${u}" target="_blank" rel="noopener" class="zh">${t}</a><div class="meta">${pill}<span>${en}</span></div></div>`;
+  $('src-regs').innerHTML = Object.values(SRC).map(s => srcRow(s.t, s.en, s.u, '<span class="pill info">Cited</span>')).join('');
+  $('src-data').innerHTML = [
+    ['OpenStreetMap buildings', `${fmt(D.stats.buildings)} footprints. ${fmt(D.stats.tagged_heights)} have tagged heights; the rest are estimated.`, 'https://www.openstreetmap.org/copyright'],
+    ['OpenStreetMap land use', `${fmt(plots.length)} plots, mapped to planning categories`, 'https://www.openstreetmap.org/copyright'],
+    ['OpenStreetMap roads and metro', `${fmt(D.stats.roads)} road segments, ${D.stats.stations} stations`, 'https://www.openstreetmap.org/copyright'],
+    ['DataV GeoAtlas', '16 district outlines, converted from GCJ-02 to WGS-84', 'https://datav.aliyun.com/portal/school/atlas/area_selector'],
+  ].map(([t, e, u]) => srcRow(t, e, u, '<span class="pill ok">Loaded</span>')).join('');
+  $('src-next').innerHTML = [
+    ['控规 plan drawings and notices (区规划公示)', 'Plot-level land use, floor-area ratio, height and green space, read from district PDFs'],
+    ['土地出让方案 land sale notices', 'Exact plot conditions for land being sold, such as Putuo 普府〔2026〕54号'],
+    ['历史风貌区 and 优秀历史建筑 lists', 'Official heritage boundaries and the 1,000+ listed buildings'],
+    ['Airport height-control surfaces', 'Hongqiao and Pudong obstacle limits'],
+    ['Licensing rules (一网通办)', 'What a business needs to open at an address'],
+  ].map(([t, e]) => `<div class="src"><span class="zh">${t}</span><div class="meta"><span class="pill neutral">Planned</span><span>${e}</span></div></div>`).join('');
+  const names = [...new Set([...plots.filter(p => p.n).map(p => p.n), ...stations.map(s => s.n), ...landmarks.map(l => l.n)])];
+  $('names').innerHTML = names.map(n => `<option value="${n}">`).join('');
+}
+
+function inset() {
+  const svg = $('inset');
+  const all = districts.flatMap(d => d.rings.flat());
+  const minx = Math.min(...all.map(p => p[0])), maxx = Math.max(...all.map(p => p[0]));
+  const miny = Math.min(...all.map(p => p[1])), maxy = Math.max(...all.map(p => p[1]));
+  const k = Math.cos(31.2 * Math.PI / 180), W = 200, H = W * (maxy - miny) / ((maxx - minx) * k);
+  svg.setAttribute('viewBox', `0 0 ${W} ${H.toFixed(1)}`);
+  const pt = ([x, y]) => `${((x - minx) * k / ((maxx - minx) * k) * W).toFixed(1)},${((maxy - y) / (maxy - miny) * H).toFixed(1)}`;
+  svg.innerHTML = districts.map(d => d.rings.map(r => `<path d="M${r.map(pt).join('L')}Z" fill="${d.code === 310104 ? 'var(--accent)' : 'var(--map-district)'}" stroke="var(--panel)" stroke-width=".6"><title>${d.name}</title></path>`).join('')).join('');
+}
+
+function draw() { if (deckgl) deckgl.setProps({ layers: layers() }); }
+function render() { inspector(); draw(); }
+
+// ---------- wiring ----------
+$('tab-layers').onclick = () => { $('pane-layers').hidden = false; $('pane-sources').hidden = true; $('tab-layers').setAttribute('aria-selected', 'true'); $('tab-sources').setAttribute('aria-selected', 'false'); };
+$('tab-sources').onclick = () => { $('pane-layers').hidden = true; $('pane-sources').hidden = false; $('tab-layers').setAttribute('aria-selected', 'false'); $('tab-sources').setAttribute('aria-selected', 'true'); };
+['plots', 'bldg', 'metro'].forEach(k => $('L-' + k).addEventListener('change', e => { state.layers[k] = e.target.checked; draw(); }));
+const setPitch = p => { state.pitch = p; $('v3d').setAttribute('aria-pressed', p > 0); $('v2d').setAttribute('aria-pressed', p === 0); fly({ pitch: p, bearing: p ? -28 : 0 }); draw(); };
+$('v3d').onclick = () => setPitch(55); $('v2d').onclick = () => setPitch(0);
+const setMode = m => { state.mode = m; $('e-prop').setAttribute('aria-pressed', m === 'prop'); $('e-exist').setAttribute('aria-pressed', m === 'exist'); draw(); };
+$('e-prop').onclick = () => setMode('prop'); $('e-exist').onclick = () => setMode('exist');
+$('crumb-sh').onclick = () => fly(SH_VIEW);
+$('crumb-xh').onclick = () => fly({ ...XH_VIEW, zoom: 12.4, pitch: state.pitch, longitude: 121.437, latitude: 31.178 });
+$('inset').addEventListener('click', () => fly(SH_VIEW));
+$('inset').addEventListener('keydown', e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fly(SH_VIEW); } });
+$('q').addEventListener('change', () => {
+  const v = $('q').value.trim(); if (!v) return;
+  const p = plots.find(p => p.n === v) || plots.find(p => p.n && p.n.includes(v));
+  if (p) return select(p);
+  const s = stations.find(s => s.n.includes(v)) || landmarks.find(l => l.n.includes(v));
+  if (s) fly({ longitude: s.pos[0], latitude: s.pos[1], zoom: 16, pitch: state.pitch });
+});
+const mq = matchMedia('(prefers-color-scheme: dark)');
+const retheme = () => { readTheme(); draw(); };
+mq.addEventListener('change', retheme);
+new MutationObserver(retheme).observe(document.documentElement, { attributes: true, attributeFilter: ['data-theme'] });
+
+function start() {
+  readTheme(); rail(); inset();
+  state.sel = defaultPlot;
+  const c = defaultPlot.center;
+  viewState = { ...XH_VIEW, longitude: c[0] - 0.0015, latitude: c[1] - 0.0012, zoom: 15.6 };
+  deckgl = new deck.DeckGL({
+    container: 'map', initialViewState: viewState, controller: true,
+    onViewStateChange: ({ viewState: v }) => { viewState = v; },
+    layers: [], getTooltip: tooltip, onClick,
+    effects: [new deck.LightingEffect({
+      ambient: new deck.AmbientLight({ color: [255, 255, 255], intensity: 1.0 }),
+      sun: new deck.DirectionalLight({ color: [255, 248, 235], intensity: 1.6, direction: [-2, -6, -4] }),
+    })],
+    getCursor: ({ isHovering }) => isHovering ? 'pointer' : 'grab',
+  });
+  render();
+  $('hint').hidden = false;
+}
+(document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(start);
+})();
+</script>
