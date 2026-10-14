@@ -155,6 +155,16 @@ body.lang-en .lbl.river b { display: none; }
 .pop .r2 b { color: var(--ink); }
 .hint { position: absolute; left: 50%; top: 14px; transform: translateX(-50%); background: var(--navy); color: #fff; padding: 6px 14px; border-radius: 999px; font-size: 12px; box-shadow: var(--shadow); }
 .sheet { display: none; }
+#amap { position: absolute; inset: 0; }
+.pop.am { position: relative; transform: none; }
+.basemap .seg { display: flex; }
+.basemap .seg button { flex: 1; padding: 5px 6px; font-size: 12px; }
+.seg button[aria-pressed="true"] .en { color: #c9d3ea; }
+.keyform { display: grid; gap: 6px; }
+.keyform input { height: 32px; padding: 0 8px; border: 1px solid var(--line); border-radius: 8px; min-width: 0; }
+.msg { font-size: 11.5px; padding: 7px 9px; border-radius: 8px; }
+.msg.err { background: var(--stop-soft); color: #a3262a; }
+.msg.info { background: var(--blue-soft); color: #1f4fbf; }
 
 /* details panel */
 .details { margin: 12px 12px 12px 10px; background: var(--panel); border-radius: var(--r); box-shadow: var(--shadow); overflow-y: auto; min-height: 0; }
@@ -419,6 +429,7 @@ function massing(ev, env) {
 
 // ---------- state ----------
 const state = { sel: null, mode: 'prop', pitch: 55, tab: 'map', lang: 'zh', saved: new Set(), showAll: false, open: new Set(),
+  base: 'builtin', amapMsg: '', amapErr: false,
   layers: { plots: true, bldg: true, metro: true, zones: true }, zones: Object.fromEntries(zones.map(z => [z.id, true])), q: '20,000 m² 研发办公 R&D office' };
 const defaultPlot = plots.find(p => p.c === 'C8' && p.z.includes('westbund') && p.sd < 300 && p.a > 10000 && p.a < 30000) || plots.find(p => p.c === 'C8') || plots[0];
 
@@ -497,6 +508,7 @@ function select(p, doFly = true) {
 }
 function flyToPlot(p) { fly({ longitude: p.center[0], latitude: p.center[1] - 0.0012, zoom: Math.max(15, 17.4 - Math.log2(Math.sqrt(p.a) / 40)), pitch: state.pitch, bearing: -20 }); }
 function fly(v, ms = 1400) {
+  if (AM.map) { amapFly(v, ms); viewState = { ...viewState, ...v }; return; }
   viewState = { ...viewState, ...v, transitionDuration: ms, transitionInterpolator: new deck.FlyToInterpolator() };
   deckgl.setProps({ initialViewState: viewState });
 }
@@ -521,6 +533,7 @@ const labelEls = labelData.map(l => {
 });
 const pop = document.createElement('div'); pop.className = 'pop'; $('labels').appendChild(pop);
 function placeLabels() {
+  if (AM.map) return;
   let vp; try { vp = deckgl && deckgl.isInitialized && deckgl.getViewports()[0]; } catch (e) { vp = null; } if (!vp) return;
   const W = vp.width, H = vp.height, z = vp.zoom;
   labelData.forEach((l, i) => {
@@ -714,6 +727,7 @@ function rail() {
     <div class="rsec"><div class="rhead">${bi('徐汇区', 'Xuhui District')}<button type="button" class="iconbtn" id="r-sh" aria-label="Show all of Shanghai" title="Show all of Shanghai">${ICON.close}</button></div>
       <div class="minimap"><div class="sh">${bi('上海', 'Shanghai', 'light')}</div><svg id="mini" role="button" tabindex="0" aria-label="Fly to Xuhui"></svg></div>
       <p class="note">${fmt(plots.length)} plots · ${fmt(buildings.length)} buildings · ${stations.length} metro stations</p></div>
+    ${baseMapHtml()}
     <div class="rsec">${bi('图例', 'Legend')}<div class="legend">${lg}</div></div>`;
   if (state.tab === 'layers') el.innerHTML = `<div class="rsec">${bi('图层控制', 'Layer Controls')}
       ${sw('plots', state.layers.plots, bi('地块', 'Land-use plots', 'light'))}
@@ -735,9 +749,167 @@ function rail() {
   el.querySelectorAll('[data-l]').forEach(i => i.onchange = () => { const k = i.dataset.l; if (k.startsWith('z:')) state.zones[k.slice(2)] = i.checked; else state.layers[k] = i.checked; draw(); placeLabels(); });
   const mini = $('mini'); if (mini) { miniSvg(mini, { pin: true }); mini.onclick = () => fly(XH_VIEW); mini.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fly(XH_VIEW); } }; }
   const rsh = $('r-sh'); if (rsh) rsh.onclick = () => fly(SH_VIEW);
+  el.querySelectorAll('[data-base]').forEach(b => b.onclick = () => setBase(b.dataset.base));
+  const kf = $('amap-form');
+  if (kf) kf.onsubmit = e => {
+    e.preventDefault();
+    saveKeys({ key: $('amap-key').value.trim(), code: $('amap-code').value.trim() });
+    if (window.AMap && state.amapErr) { state.amapMsg = '已保存，请刷新页面。Saved. Reload the page to use the new key.'; rail(); return; }
+    setBase(state.base);
+  };
 }
 
-function draw() { if (deckgl) deckgl.setProps({ layers: layers() }); }
+function draw() { if (AM.map) amapDraw(); else if (deckgl) deckgl.setProps({ layers: layers() }); }
+
+// ---------- Amap (高德) base map ----------
+// Optional: real 3D buildings, labels and satellite imagery from Amap JS API 2.0, with our plots on top.
+// Needs the user's own Amap Web key + security code; loads from webapi.amap.com, so it cannot run inside
+// the claude.ai preview (its CSP blocks that host). Amap uses GCJ-02, so every coordinate is converted.
+function gcj([lng, lat]) {
+  const a = 6378245, ee = 0.00669342162296594323, PI = Math.PI, x = lng - 105, y = lat - 35;
+  let dLat = -100 + 2 * x + 3 * y + 0.2 * y * y + 0.1 * x * y + 0.2 * Math.sqrt(Math.abs(x));
+  dLat += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
+  dLat += (20 * Math.sin(y * PI) + 40 * Math.sin(y / 3 * PI)) * 2 / 3;
+  dLat += (160 * Math.sin(y / 12 * PI) + 320 * Math.sin(y * PI / 30)) * 2 / 3;
+  let dLng = 300 + x + 2 * y + 0.1 * x * x + 0.1 * x * y + 0.1 * Math.sqrt(Math.abs(x));
+  dLng += (20 * Math.sin(6 * x * PI) + 20 * Math.sin(2 * x * PI)) * 2 / 3;
+  dLng += (20 * Math.sin(x * PI) + 40 * Math.sin(x / 3 * PI)) * 2 / 3;
+  dLng += (150 * Math.sin(x / 12 * PI) + 300 * Math.sin(x / 30 * PI)) * 2 / 3;
+  const rad = lat / 180 * PI, magic = 1 - ee * Math.sin(rad) ** 2, sm = Math.sqrt(magic);
+  dLat = dLat * 180 / ((a * (1 - ee)) / (magic * sm) * PI);
+  dLng = dLng * 180 / (a / sm * Math.cos(rad) * PI);
+  return [lng + dLng, lat + dLat];
+}
+const gring = r => r.map(gcj);
+const amapZoom = z => z + 1, deckZoom = z => z - 1; // Amap zoom levels sit one above deck.gl's 512 px tiles
+function keys() { try { return JSON.parse(localStorage.getItem('plotatlas.amap') || '{}'); } catch (e) { return {}; } }
+function saveKeys(k) { try { localStorage.setItem('plotatlas.amap', JSON.stringify(k)); } catch (e) { /* stays for this visit only */ } }
+function loadScript(src, ms = 15000) {
+  return new Promise((res, rej) => {
+    const sc = document.createElement('script'), t = setTimeout(() => rej(new Error('timeout')), ms);
+    sc.src = src; sc.async = true;
+    sc.onload = () => { clearTimeout(t); res(); }; sc.onerror = () => { clearTimeout(t); rej(new Error('load')); };
+    document.head.appendChild(sc);
+  });
+}
+async function amapLoad(key, code) {
+  if (window.AMap && window.AMap.Map) return;
+  window._AMapSecurityConfig = { securityJsCode: code || '' };
+  await loadScript(`https://webapi.amap.com/maps?v=2.0&key=${encodeURIComponent(key)}`);
+  if (!window.AMap || !window.AMap.Map) throw new Error('key');
+  try { await loadScript(`https://webapi.amap.com/loca?v=2.0.0&key=${encodeURIComponent(key)}`); } catch (e) { /* no Loca: the envelope shows as a 2D outline only */ }
+}
+function baseMapHtml() {
+  const b = state.base, k = keys();
+  const btn = (id, zh, en) => `<button type="button" data-base="${id}" aria-pressed="${b === id}">${zh} <span class="en">${en}</span></button>`;
+  const form = `<form class="keyform" id="amap-form">
+      <label class="en" for="amap-key">高德 Web 端 Key · Amap Web (JS API) key</label><input id="amap-key" autocomplete="off" value="${esc(k.key || '')}">
+      <label class="en" for="amap-code">安全密钥 · Security code</label><input id="amap-code" autocomplete="off" value="${esc(k.code || '')}">
+      <button class="btn" type="submit"><span class="zh-only">保存并加载</span><small>Save and load</small></button>
+      <a class="link" href="https://console.amap.com/dev/key/app" target="_blank" rel="noopener">获取高德 Key · Get an Amap key</a>
+    </form>`;
+  return `<div class="rsec basemap">${bi('底图', 'Base map')}
+    <div class="seg" role="group" aria-label="Base map">${btn('builtin', '内置', 'Built-in')}${btn('amap', '高德', 'Amap')}${btn('sat', '卫星', 'Satellite')}</div>
+    ${b !== 'builtin' && (!k.key || state.amapErr) ? form : ''}
+    ${state.amapMsg ? `<div class="msg ${state.amapErr ? 'err' : 'info'}" role="status">${state.amapMsg}</div>` : ''}
+    <p class="note">Amap adds real 3D buildings, street labels and satellite imagery. It uses your own key, saved only in this browser, and works when this page is opened from your computer or website, not inside the claude.ai preview.</p>
+  </div>`;
+}
+async function setBase(b) {
+  state.base = b; state.amapMsg = ''; state.amapErr = false;
+  try { localStorage.setItem('plotatlas.base', b); } catch (e) { /* not remembered */ }
+  if (b === 'builtin') { amapStop(); rail(); return; }
+  const k = keys();
+  if (!k.key) { rail(); return; }
+  if (!AM.map) { state.amapMsg = '正在加载高德地图… Loading Amap…'; rail(); }
+  try { await amapLoad(k.key, k.code); amapStart(); state.amapMsg = ''; }
+  catch (e) {
+    state.amapErr = true;
+    state.amapMsg = '高德地图未能加载。Amap could not load. Check the key and security code, and open this page from your own computer or website: it cannot run inside the claude.ai preview.';
+  }
+  rail();
+}
+const AM = {};
+function amapStart() {
+  if (!AM.map) {
+    $('map').hidden = true; $('labels').hidden = true;
+    const el = document.createElement('div'); el.id = 'amap'; $('map').after(el);
+    AM.map = new AMap.Map('amap', {
+      viewMode: '3D', zoom: amapZoom(viewState.zoom), center: gcj([viewState.longitude, viewState.latitude]),
+      pitch: state.pitch, rotation: -(viewState.bearing || 0), mapStyle: 'amap://styles/whitesmoke', showBuildingBlock: false, skyColor: '#dfe9f5',
+    });
+    AM.bld = new AMap.Buildings({ zooms: [14, 20], zIndex: 10, heightFactor: 1 });
+    AM.map.add(AM.bld);
+    AM.sat = [new AMap.TileLayer.Satellite(), new AMap.TileLayer.RoadNet()];
+    if (window.Loca) {
+      AM.loca = new Loca.Container({ map: AM.map });
+      AM.env = new Loca.PolygonLayer({ zIndex: 120, opacity: 1, hasSide: true });
+      AM.mass = new Loca.PolygonLayer({ zIndex: 121, opacity: 1, hasSide: true, shininess: 20 });
+      AM.loca.add(AM.env); AM.loca.add(AM.mass);
+    }
+    AM.map.on('zoomend', () => { const z = deckZoom(AM.map.getZoom()); $('crumb-sh').classList.toggle('here', z < 11); $('crumb-xh').classList.toggle('here', z >= 11); });
+  }
+  if (state.base === 'sat') AM.map.add(AM.sat); else AM.map.remove(AM.sat);
+  amapDraw();
+}
+function amapStop() {
+  if (!AM.map) return;
+  AM.map.destroy(); $('amap').remove();
+  Object.keys(AM).forEach(k => delete AM[k]);
+  $('map').hidden = false; $('labels').hidden = false;
+  draw(); placeLabels();
+}
+function amapFly(v, ms) {
+  const m = AM.map;
+  if (v.longitude != null) m.setZoomAndCenter(amapZoom(v.zoom != null ? v.zoom : deckZoom(m.getZoom())), gcj([v.longitude, v.latitude]), false, ms);
+  else if (v.zoom != null) m.setZoom(amapZoom(v.zoom), false, ms);
+  if (v.pitch != null) m.setPitch(v.pitch, false, ms);
+  if (v.bearing != null) m.setRotation(-v.bearing, false, ms);
+}
+function amapDraw() {
+  const m = AM.map; if (!m) return;
+  if (!AM.plots) {
+    AM.plots = new AMap.OverlayGroup(plots.map(p => {
+      const o = new AMap.Polygon({ path: gring(p.poly), fillColor: CAT[p.c].color, fillOpacity: 0.5, strokeColor: '#ffffff', strokeWeight: 1, strokeOpacity: 0.9, cursor: 'pointer', zIndex: 10 });
+      o.on('click', () => select(p, false)); return o;
+    }));
+    AM.zones = Object.fromEntries(zones.map(z => [z.id, new AMap.OverlayGroup(z.rings.map(r => new AMap.Polyline({
+      path: gring([...r, r[0]]), strokeColor: ZONE[z.id].color, strokeWeight: 2.5, strokeOpacity: 0.95, strokeStyle: 'dashed', strokeDasharray: [8, 6], zIndex: 12, bubble: true })))]));
+    AM.metro = new AMap.OverlayGroup(metro.map(l => new AMap.Polyline({ path: gring(l.path), strokeColor: METRO[l.l] || '#e4002b', strokeWeight: 4, strokeOpacity: 0.9, zIndex: 11, bubble: true })));
+    const xh = districts.find(d => d.code === 310104);
+    AM.border = new AMap.OverlayGroup(xh.rings.map(r => new AMap.Polyline({ path: gring([...r, r[0]]), strokeColor: '#2f6bff', strokeWeight: 2, strokeOpacity: 0.7, zIndex: 9, bubble: true })));
+    m.add([AM.plots, AM.metro, AM.border, ...Object.values(AM.zones)]);
+  }
+  state.layers.plots ? AM.plots.show() : AM.plots.hide();
+  state.layers.metro ? AM.metro.show() : AM.metro.hide();
+  Object.entries(AM.zones).forEach(([id, g]) => (state.layers.zones && state.zones[id]) ? g.show() : g.hide());
+  const p = state.sel;
+  if (AM.selPoly) { m.remove(AM.selPoly); AM.selPoly = null; }
+  if (AM.popM) { m.remove(AM.popM); AM.popM = null; }
+  const style = { hideWithoutStyle: false, areas: [] };
+  if (p) {
+    const path = gring(p.poly);
+    AM.selPoly = new AMap.Polygon({ path, fillColor: '#2f6bff', fillOpacity: 0.3, strokeColor: '#2f6bff', strokeWeight: 3, zIndex: 20, bubble: true });
+    AM.popM = new AMap.Marker({ position: gcj(p.center), content: `<div class="pop am">${popHtml()}</div>`, anchor: 'bottom-center', offset: new AMap.Pixel(0, -8), zIndex: 200 });
+    m.add([AM.selPoly, AM.popM]);
+    // Proposal view hides Amap's own buildings on the plot; existing view tints them blue.
+    style.areas.push(state.mode === 'prop' ? { visible: false, path } : { visible: true, rejectTexture: true, color1: 'ff2f6bff', color2: 'ff4a80ff', path });
+  }
+  try { AM.bld.setStyle(style); } catch (e) { /* older API: buildings stay as they are */ }
+  if (AM.loca) {
+    const ev = p && evaluate(p), show = !!(p && state.mode === 'prop' && ev.buildable);
+    const feat = (ring, h) => ({ type: 'Feature', properties: { h }, geometry: { type: 'Polygon', coordinates: [[...gring(ring), gcj(ring[0])]] } });
+    const fc = f => new Loca.GeoJSONSource({ data: { type: 'FeatureCollection', features: f } });
+    const env = p && (p.inset || p.poly);
+    try {
+      AM.env.setSource(fc(show ? [feat(env, ev.h)] : []));
+      AM.env.setStyle({ topColor: 'rgba(47,107,255,0.10)', sideTopColor: 'rgba(47,107,255,0.18)', sideBottomColor: 'rgba(47,107,255,0.18)', height: (i, f) => f.properties.h, altitude: 0 });
+      AM.mass.setSource(fc(show ? massing(ev, env).parts.map(pt => feat(pt.ring, pt.top)) : []));
+      AM.mass.setStyle({ topColor: 'rgba(143,176,255,1)', sideTopColor: 'rgba(74,128,255,1)', sideBottomColor: 'rgba(47,95,224,1)', height: (i, f) => f.properties.h, altitude: 0 });
+      if (AM.loca.requestRender) AM.loca.requestRender();
+    } catch (e) { /* envelope stays as the 2D outline */ }
+  }
+}
 function render() { details(); pop.innerHTML = popHtml(); draw(); placeLabels(); }
 function setLang(l) { state.lang = l; document.body.classList.toggle('lang-en', l === 'en'); $('lang-zh').outerHTML = l === 'zh' ? '<b id="lang-zh">中</b>' : '<span id="lang-zh">中</span>'; $('lang-en').outerHTML = l === 'en' ? '<b id="lang-en">EN</b>' : '<span id="lang-en">EN</span>'; rail(); render(); }
 
@@ -749,7 +921,8 @@ $('locate').onclick = () => state.sel ? flyToPlot(state.sel) : fly(XH_VIEW);
 $('lang').onclick = () => setLang(state.lang === 'zh' ? 'en' : 'zh');
 $('crumb-sh').onclick = () => fly(SH_VIEW); $('crumb-xh').onclick = () => fly(XH_VIEW);
 $('north').onclick = () => fly({ bearing: 0 }, 600);
-$('zin').onclick = () => fly({ zoom: viewState.zoom + 1 }, 400); $('zout').onclick = () => fly({ zoom: viewState.zoom - 1 }, 400);
+$('zin').onclick = () => AM.map ? AM.map.zoomIn() : fly({ zoom: viewState.zoom + 1 }, 400);
+$('zout').onclick = () => AM.map ? AM.map.zoomOut() : fly({ zoom: viewState.zoom - 1 }, 400);
 $('home').onclick = () => fly(XH_VIEW);
 $('locator').onclick = () => fly(SH_VIEW);
 $('locator').onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); fly(SH_VIEW); } };
@@ -779,6 +952,8 @@ function start() {
     getCursor: ({ isHovering }) => isHovering ? 'pointer' : 'grab',
   });
   render();
+  let saved = 'builtin'; try { saved = localStorage.getItem('plotatlas.base') || 'builtin'; } catch (e) { /* default */ }
+  if (saved !== 'builtin' && keys().key) setBase(saved);
 }
 (document.fonts && document.fonts.ready ? document.fonts.ready : Promise.resolve()).then(start);
 })();
